@@ -804,10 +804,14 @@ bot.on('inline_query', async (ctx) => {
 });
 
 const http = require('http');
-http.createServer((req, res) => res.end('Bot is Running')).listen(process.env.PORT || 10000);
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot is Running\n');
+}).listen(process.env.PORT || 10000);
 
 
 bot.catch((err) => console.log('Error:', err));
 bot.launch();
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
