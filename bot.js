@@ -1,7 +1,7 @@
 /**
- * 🎵 Ultimate Telegram Music Bot (Final V11 - Perfected)
- * Fixes: ReferenceError, Channel Metadata, FSub Delete, Animation Loop, Visualizer
- * New Features: FB/IG/TK Support, MP4 Download, Dynamic Caption, Fixed Repeat Issue
+ * 🎵 Ultimate Telegram Music Bot (Final V12 - Anti-Block)
+ * Fixes: Render IP Block, 403 Forbidden, Not Found Error
+ * Features: User-Agent Spoofing, IPv4 Forcing, Enhanced Debugging
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -13,7 +13,7 @@ const path = require('path');
 
 // ====================== 1. CONFIGURATION ======================
 const CONFIG = {
-    botToken: '8372713470:AAE9-JWCpAND7NWe-yohWiPzChrfl5BIxgo',
+    botToken: '8372713470:AAHo3uIo6_DiR2O7gtwwVYA5QJem19eJjQU',
     adminIds: [7249009912],
     backupChannel: '-1003311021802',
     mp4BotUsername: 'Ayat_Earningx_Bot',
@@ -69,7 +69,7 @@ function getUserMode(uid) {
 }
 
 function makeUserCaption(extraMsg = '') {
-    const spacer = '.                          ';
+    const spacer = '.                                 ';
     let cap = `${spacer}⚡ ᴾᵒʷᵉʳᵉᵈ ᵇʸ
 <a href="${CONFIG.muzycapLink}">💜 muzycap</a>${spacer}<a href="${CONFIG.ownerLink}">Araf Tech SmartBot</a>`;
     return cap;
@@ -552,7 +552,7 @@ bot.on([message('text'), message('voice'), message('audio'), message('video')], 
         if (!fsub.joined) return ctx.reply(getText(uid, 'join_alert'), Markup.inlineKeyboard(fsub.buttons));
         const waitMsg = await ctx.reply('🔎 💿');
         try {
-            const p = spawn('python3', ['-m', 'yt_dlp', '--dump-json', '--no-warnings', query]);
+            const p = spawn('python3', ['-m', 'yt_dlp', '--dump-json', '--no-warnings', '--no-check-certificate', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', '--force-ipv4', query]);
             let output = '';
             p.stdout.on('data', (d) => output += d);
             p.on('close', async (c) => {
@@ -719,10 +719,13 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
     const url = isLink ? vidId : `https://www.youtube.com/watch?v=${vidId}`;
 
     try {
+        // Auto Update yt-dlp to avoid "Not Found" on Render
+        try { spawn('python3', ['-m', 'pip', 'install', '--upgrade', 'yt-dlp']); } catch(e){}
+
         let realTitle = title;
         if(realTitle === 'Audio' || !realTitle) {
              try {
-                 const p = spawn('python3', ['-m', 'yt_dlp', '--get-title', '--no-check-certificate', url]);
+                 const p = spawn('python3', ['-m', 'yt_dlp', '--get-title', '--no-check-certificate', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', '--force-ipv4', url]);
                  p.stdout.on('data', (d) => realTitle = d.toString().trim());
              } catch(e) {}
         }
@@ -735,8 +738,9 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
             const file = path.join(__dirname, `${Date.now()}.${ext}`);
             
             await new Promise((resolve, reject) => {
-                const p = spawn('python3', ['-m', 'yt_dlp', '-f', format, '--no-check-certificate', '-o', file, url]);
-                p.on('close', c => c === 0 ? resolve() : reject());
+                const p = spawn('python3', ['-m', 'yt_dlp', '-f', format, '--no-check-certificate', '--no-playlist', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', '--force-ipv4', '-o', file, url]);
+                p.on('close', c => c === 0 ? resolve() : reject(new Error('Process exited with ' + c)));
+                p.on('error', (err) => reject(err));
             });
 
             const sent = await sendMediaToUser(ctx, { source: file }, true, realTitle, type); 
@@ -764,7 +768,12 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
         try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){}
         if (appSettings.customMsg) await ctx.reply(appSettings.customMsg);
         await ctx.reply('↪️ Share this:', Markup.inlineKeyboard([[Markup.button.switchInlineQuery('Forward', '')]]));
-    } catch (e) { clearInterval(anim); try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){} ctx.reply(getText(uid, 'not_found')); }
+    } catch (e) { 
+        console.log(e);
+        clearInterval(anim); 
+        try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){} 
+        ctx.reply(getText(uid, 'not_found')); 
+    }
 }
 
 async function sendMediaToUser(ctx, source, isNew = false, realTitle = '', type = 'Audio') {
