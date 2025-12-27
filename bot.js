@@ -15,7 +15,7 @@ const path = require('path');
 const CONFIG = {
     // ⚠️ সতর্কতা: এখানে তোমার নতুন টোকেনটি বসাবে। 
     // পুরানো বা ভুল টোকেন থাকলে '401 Unauthorized' এরর আসবে।
-    botToken: '8372713470:AAGnbSC9ozv18w-9WXy9LGoZuF8OX0sE37w', 
+    botToken: '8372713470:AAGc4gwKr_VBvZylAcqS8zlvK7P8Le9wAGw', 
     adminIds: [7249009912],
     backupChannel: '-1003311021802',
     mp4BotUsername: 'Ayat_Earningx_Bot',
@@ -691,10 +691,12 @@ bot.action(/full_(.+)/, async (ctx) => {
     await handleSearch(ctx, video.title.replace('shorts', '').replace('tiktok', ''));
 });
 
-// ====================== 10. DOWNLOAD ENGINE ======================
+// ====================== 10. DOWNLOAD ENGINE (FIXED & OPTIMIZED) ======================
 async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = false, isLink = false, type = 'Audio') {
     const uid = ctx.from.id;
     const cid = ctx.chat.id;
+
+    // ১. ফোর্স সাবস্ক্রাইব চেক
     if(isDeepLink) {
         const fsub = await checkForceSubscribe(ctx, uid);
         if(!fsub.joined) {
@@ -706,12 +708,18 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
     const dbKey = isLink ? Buffer.from(vidId).toString('base64').substring(0, 20) : vidId;
     const cachedFile = songDatabase[`${type}_${dbKey}`];
 
+    // ২. ক্যাশ চেক (আগে ডাউনলোড করা থাকলে সেখান থেকেই দেবে)
     if (isDeepLink && cachedFile) {
         const caption = makeUserCaption(appSettings.customMsg || '');
         const opts = { caption: caption, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '🤖 Join Bot', url: `https://t.me/${CONFIG.botUsername.replace('@', '')}` }], [{ text: '↪️ Forward to Chat', switch_inline_query: '' }]] } };
-        if(type === 'Audio') await ctx.replyWithAudio(cachedFile, opts);
-        else await ctx.replyWithVideo(cachedFile, opts);
-        return;
+        try {
+            if(type === 'Audio') await ctx.replyWithAudio(cachedFile, opts);
+            else await ctx.replyWithVideo(cachedFile, opts);
+            return;
+        } catch(e) {
+            // ক্যাশ ফাইল যদি টেলিগ্রাম সার্ভার থেকে মুছে যায়, তবে আবার ডাউনলোড করবে
+            delete songDatabase[`${type}_${dbKey}`];
+        }
     }
 
     let waitMsg;
@@ -721,79 +729,101 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
     const url = isLink ? vidId : `https://www.youtube.com/watch?v=${vidId}`;
 
     try {
-        // Auto Update yt-dlp to avoid "Not Found" on Render
+        // yt-dlp আপডেট রাখা
         try { spawn('python3', ['-m', 'pip', 'install', '--upgrade', 'yt-dlp']); } catch(e){}
 
         let realTitle = title;
+        // রিয়েল টাইটেল বের করা
         if(realTitle === 'Audio' || !realTitle) {
              try {
-                 const p = spawn('python3', ['-m', 'yt_dlp', '--get-title', '--no-check-certificate', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', '--force-ipv4', url]);
-                 p.stdout.on('data', (d) => realTitle = d.toString().trim());
+                 const p = spawn('python3', ['-m', 'yt_dlp', '--get-title', '--no-check-certificate', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', url]);
+                 let tData = '';
+                 p.stdout.on('data', (d) => tData += d.toString());
+                 p.on('close', () => { if(tData) realTitle = tData.trim(); });
              } catch(e) {}
         }
 
-        if (cachedFile) {
-            await sendMediaToUser(ctx, cachedFile, false, realTitle, type);
-        } else {
-            const ext = type === 'Audio' ? 'm4a' : 'mp4';
-            // Use specific format for best quality and to avoid issues
-            const format = type === 'Audio' ? 'bestaudio[ext=m4a]/bestaudio' : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
-            const file = path.join(__dirname, `${Date.now()}.${ext}`);
+        const ext = type === 'Audio' ? 'm4a' : 'mp4';
+        
+        // ৩. ফরম্যাট সিলেকশন (৫০MB এর নিচে রাখার জন্য)
+        // ভিডিও হলে সর্বোচ্চ ৪৮০p কোয়ালিটি নামাবে যাতে সাইজ ছোট থাকে
+        const format = type === 'Audio' 
+            ? 'bestaudio[ext=m4a][filesize<50M]/bestaudio[filesize<50M]/best[ext=m4a]' 
+            : 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[ext=mp4]';
+        
+        const file = path.join(__dirname, `${Date.now()}.${ext}`);
+        
+        // ৪. ডাউনলোড প্রসেস
+        await new Promise((resolve, reject) => {
+            const p = spawn('python3', [
+                '-m', 'yt_dlp', 
+                '-f', format, 
+                '--no-check-certificate', 
+                '--no-playlist', 
+                '--geo-bypass',        
+                '--no-warnings',
+                '--quiet',             
+                '--force-ipv4',
+                '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                '-o', file, 
+                url
+            ]);
             
-            await new Promise((resolve, reject) => {
-                const p = spawn('python3', [
-                    '-m', 'yt_dlp', 
-                    '-f', format, 
-                    '--no-check-certificate', 
-                    '--no-playlist', 
-                    '--geo-bypass',        
-                    '--no-warnings',
-                    '--quiet',             
-                    '--force-ipv4',        
-                    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                    '-o', file, 
-                    url
-                ]);
-                
-                // Debugging log for Render
-                p.stderr.on('data', (data) => {
-                    console.error(`yt-dlp stderr: ${data}`);
-                });
+            p.stderr.on('data', (data) => console.error(`yt-dlp stderr: ${data}`));
+            p.on('close', c => c === 0 ? resolve() : reject(new Error('Process exited with ' + c)));
+            p.on('error', (err) => reject(err));
+        });
 
-                p.on('close', c => c === 0 ? resolve() : reject(new Error('Process exited with ' + c)));
-                p.on('error', (err) => reject(err));
-            });
-
-            const sent = await sendMediaToUser(ctx, { source: file }, true, realTitle, type); 
-            const fileId = type === 'Audio' ? sent.audio.file_id : sent.video.file_id;
-            
-            songDatabase[`${type}_${dbKey}`] = fileId;
-            saveJSON(FILES.db, songDatabase);
-            
-            if(type === 'Audio') {
-                if(!Array.isArray(usersData.history[uid])) usersData.history[uid] = [];
-                usersData.history[uid].push({ title: realTitle, id: dbKey });
-            }
-            if(usersData.info[uid]) usersData.info[uid].downloads++;
-            saveJSON(FILES.users, usersData);
-
-            try {
-                const backupOpts = { caption: makeChannelCaption(realTitle, url, uid), parse_mode: 'HTML', title: realTitle, performer: 'Music Bot' };
-                if(type === 'Audio') await bot.telegram.sendAudio(CONFIG.backupChannel, { source: file }, backupOpts);
-                else await bot.telegram.sendVideo(CONFIG.backupChannel, { source: file }, backupOpts);
-            } catch (e) {}
-
+        // ৫. ফাইল সাইজ ভেরিফিকেশন (গুরুত্বপূর্ণ)
+        const stats = fs.statSync(file);
+        const fileSizeInMB = stats.size / (1024 * 1024);
+        
+        if (fileSizeInMB > 49.5) { 
             fs.unlinkSync(file);
+            throw new Error('FILE_TOO_LARGE');
         }
+
+        // ৬. ফাইল পাঠানো
+        const sent = await sendMediaToUser(ctx, { source: file }, true, realTitle, type); 
+        const fileId = type === 'Audio' ? sent.audio.file_id : sent.video.file_id;
+        
+        // ৭. ডাটাবেজ আপডেট
+        songDatabase[`${type}_${dbKey}`] = fileId;
+        saveJSON(FILES.db, songDatabase);
+        
+        if(type === 'Audio') {
+            if(!Array.isArray(usersData.history[uid])) usersData.history[uid] = [];
+            usersData.history[uid].push({ title: realTitle, id: dbKey });
+        }
+        if(usersData.info[uid]) usersData.info[uid].downloads++;
+        saveJSON(FILES.users, usersData);
+
+        // ৮. ব্যাকআপ চ্যানেলে পাঠানো
+        try {
+            const backupOpts = { caption: makeChannelCaption(realTitle, url, uid), parse_mode: 'HTML', title: realTitle, performer: 'Music Bot' };
+            if(type === 'Audio') await bot.telegram.sendAudio(CONFIG.backupChannel, { source: file }, backupOpts);
+            else await bot.telegram.sendVideo(CONFIG.backupChannel, { source: file }, backupOpts);
+        } catch (e) { console.log('Backup Error:', e.message); }
+
+        fs.unlinkSync(file);
+        
         clearInterval(anim);
         try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){}
         if (appSettings.customMsg) await ctx.reply(appSettings.customMsg);
         await ctx.reply('↪️ Share this:', Markup.inlineKeyboard([[Markup.button.switchInlineQuery('Forward', '')]]));
+
     } catch (e) { 
-        console.log(e);
         clearInterval(anim); 
-        try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){} 
-        ctx.reply(getText(uid, 'not_found')); 
+        try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){}
+        
+        if (e.message === 'FILE_TOO_LARGE' || e.message.includes('Too Large')) {
+            ctx.reply('❌ Sorry, this file is larger than 50MB and cannot be sent via bot.');
+        } else {
+            console.error(e);
+            ctx.reply(getText(uid, 'not_found')); 
+        }
+        // ফাইল থেকে গেলে ডিলিট করে দেবে
+        try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch(err) {}
     }
 }
 
@@ -801,8 +831,13 @@ async function sendMediaToUser(ctx, source, isNew = false, realTitle = '', type 
     const caption = makeUserCaption();
     const options = { caption: caption, parse_mode: 'HTML' };
     if (isNew) { options.title = realTitle; options.performer = CONFIG.botUsername; }
-    if(type === 'Audio') return await ctx.replyWithAudio(source, options);
-    else return await ctx.replyWithVideo(source, options);
+    
+    // ভিডিও পাঠানোর সময় হাইট-উইডথ সেট না করলে টেলিগ্রাম মাঝে মাঝে এরর দেয়, তাই সেইফ মোডে পাঠানো হচ্ছে
+    if(type === 'Audio') {
+        return await ctx.replyWithAudio(source, options);
+    } else {
+        return await ctx.replyWithVideo(source, { ...options, supports_streaming: true });
+    }
 }
 
 // ====================== 11. TOP MUSIC LOGIC ======================
