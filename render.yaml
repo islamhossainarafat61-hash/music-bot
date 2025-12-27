@@ -1,0 +1,9 @@
+cat <<EOT > render.yaml
+services:
+  - type: worker
+    name: music-bot
+    env: node
+    region: singapore
+    buildCommand: npm install
+    startCommand: node bot.js
+EOT

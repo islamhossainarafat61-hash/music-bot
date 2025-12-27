@@ -1,0 +1,17 @@
+cat <<EOT > package.json
+{
+  "name": "music-bot",
+  "version": "1.0.0",
+  "description": "A Tech Music Bot",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "play-dl": "^1.9.7",
+    "ffmpeg-static": "^5.2.0"
+  }
+}
+EOT
+
