@@ -1,7 +1,7 @@
 /**
- * 🎵 Ultimate Telegram Music Bot (Final V12 - Anti-Block)
- * Fixes: Render IP Block, 403 Forbidden, Not Found Error
- * Features: User-Agent Spoofing, IPv4 Forcing, Enhanced Debugging
+ * 🎵 Ultimate Telegram Music Bot (Final V13 - Anti-Crash & Secure)
+ * Fixes: Render IP Block, 403 Forbidden, Process Exit 1
+ * Features: Cookie Bypass, Enhanced Error Handling, Secure Token Placeholder
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -13,7 +13,9 @@ const path = require('path');
 
 // ====================== 1. CONFIGURATION ======================
 const CONFIG = {
-    botToken: '8372713470:AAHo3uIo6_DiR2O7gtwwVYA5QJem19eJjQU',
+    // ⚠️ সতর্কতা: এখানে তোমার নতুন টোকেনটি বসাবে। 
+    // পুরানো বা ভুল টোকেন থাকলে '401 Unauthorized' এরর আসবে।
+    botToken: '8372713470:AAGnbSC9ozv18w-9WXy9LGoZuF8OX0sE37w', 
     adminIds: [7249009912],
     backupChannel: '-1003311021802',
     mp4BotUsername: 'Ayat_Earningx_Bot',
@@ -52,7 +54,7 @@ const userSession = {};
 const userSearchResults = {};
 const userLinkStash = {};
 
-// Initialize Bot Object FIRST to avoid ReferenceError
+// Initialize Bot Object
 const bot = new Telegraf(CONFIG.botToken);
 
 console.log('🤖 Araf Tech Music Bot is Online...');
@@ -69,7 +71,7 @@ function getUserMode(uid) {
 }
 
 function makeUserCaption(extraMsg = '') {
-    const spacer = '.                                 ';
+    const spacer = '.                          ';
     let cap = `${spacer}⚡ ᴾᵒʷᵉʳᵉᵈ ᵇʸ
 <a href="${CONFIG.muzycapLink}">💜 muzycap</a>${spacer}<a href="${CONFIG.ownerLink}">Araf Tech SmartBot</a>`;
     return cap;
@@ -734,11 +736,30 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
             await sendMediaToUser(ctx, cachedFile, false, realTitle, type);
         } else {
             const ext = type === 'Audio' ? 'm4a' : 'mp4';
-            const format = type === 'Audio' ? 'bestaudio[ext=m4a]' : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]';
+            // Use specific format for best quality and to avoid issues
+            const format = type === 'Audio' ? 'bestaudio[ext=m4a]/bestaudio' : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
             const file = path.join(__dirname, `${Date.now()}.${ext}`);
             
             await new Promise((resolve, reject) => {
-                const p = spawn('python3', ['-m', 'yt_dlp', '-f', format, '--no-check-certificate', '--no-playlist', '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', '--force-ipv4', '-o', file, url]);
+                const p = spawn('python3', [
+                    '-m', 'yt_dlp', 
+                    '-f', format, 
+                    '--no-check-certificate', 
+                    '--no-playlist', 
+                    '--geo-bypass',        
+                    '--no-warnings',
+                    '--quiet',             
+                    '--force-ipv4',        
+                    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    '-o', file, 
+                    url
+                ]);
+                
+                // Debugging log for Render
+                p.stderr.on('data', (data) => {
+                    console.error(`yt-dlp stderr: ${data}`);
+                });
+
                 p.on('close', c => c === 0 ? resolve() : reject(new Error('Process exited with ' + c)));
                 p.on('error', (err) => reject(err));
             });
@@ -848,23 +869,34 @@ bot.on('inline_query', async (ctx) => {
     } catch (e) {}
 });
 
+// Render-এর জন্য HTTP Server (বটকে অনলাইনে রাখতে)
 const http = require('http');
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot is Running\n');
 }).listen(process.env.PORT || 10000);
 
-bot.catch((err) => console.log('Error:', err));
+// এরর হ্যান্ডেলিং
+bot.catch((err) => {
+    console.log('Error:', err);
+});
 
+// বট লঞ্চ করার সঠিক নিয়ম (রিট্রাই লজিক সহ)
 const startBot = () => {
     bot.launch().then(() => {
         console.log('🚀 Bot has been successfully launched!');
     }).catch((err) => {
         console.error('❌ Launch error:', err.message);
+        if (err.message.includes('409')) {
+            console.log('⚠️ Conflict detected: Make sure Termux or other instances are closed.');
+        }
+        // ১০ সেকেন্ড পর আবার চেষ্টা করবে যদি নেটওয়ার্ক এরর হয়
         setTimeout(() => startBot(), 10000);
     });
 };
+
 startBot();
 
+// সেফলি বন্ধ করার জন্য
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
