@@ -803,6 +803,10 @@ bot.on('inline_query', async (ctx) => {
     } catch (e) {}
 });
 
+const http = require('http');
+http.createServer((req, res) => res.end('Bot is Running')).listen(process.env.PORT || 10000);
+
+
 bot.catch((err) => console.log('Error:', err));
 bot.launch();
 process.once('SIGINT', () => bot.stop('SIGINT'));
