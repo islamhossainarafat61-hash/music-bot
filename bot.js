@@ -1,6 +1,7 @@
 /**
  * 🎵 Ultimate Telegram Music Bot (Final V11 - Perfected)
  * Fixes: ReferenceError, Channel Metadata, FSub Delete, Animation Loop, Visualizer
+ * New Features: FB/IG/TK Support, MP4 Download, Dynamic Caption, Fixed Repeat Issue
  */
 
 const { Telegraf, Markup } = require('telegraf');
@@ -12,7 +13,7 @@ const path = require('path');
 
 // ====================== 1. CONFIGURATION ======================
 const CONFIG = {
-    botToken: '8372713470:AAEM-Y1UBe31Qylc1z3EdNKDkHb05tjXcZA',
+    botToken: '8372713470:AAExV6pfD5Xm9J-uUzKiuQs-1QfH-u4qx_g',
     adminIds: [7249009912],
     backupChannel: '-1003311021802',
     mp4BotUsername: 'Ayat_Earningx_Bot',
@@ -61,7 +62,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const getLang = (id) => appSettings.userLangs[id] || 'en';
 const getText = (id, key) => LANGUAGES[getLang(id)][key] || LANGUAGES['en'][key];
 const isAdmin = (id) => CONFIG.adminIds.includes(id);
-const isUrl = (text) => text && /^(http(s)?:\/\/)?((w){3}.)?youtu(be|.be)?(\.com)?\/.+/gm.test(text) || /instagram|facebook|tiktok/gm.test(text);
+const isUrl = (text) => text && /^(http(s)?:\/\/)?((w){3}.)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/.*)?$/.test(text);
 
 function getUserMode(uid) {
     return appSettings.userModes && appSettings.userModes[uid] ? appSettings.userModes[uid] : 'youtube';
@@ -74,8 +75,7 @@ function makeUserCaption(extraMsg = '') {
     return cap;
 }
 
-function makeChannelCaption(title, url, userId, performer = 'Unknown', source = 'YouTube') {
-    const platformEmoji = source.toLowerCase() === 'tiktok' ? '🎵 TikTok' : '📺 YouTube';
+function makeChannelCaption(title, url, userId, performer = 'Unknown', source = 'Multi') {
     return `🎵 <b>Now Playing</b>
 ━━━━●─────────────── 
 ⇆ㅤㅤ◁ㅤㅤ❚❚ㅤㅤ▷ㅤㅤㅤ↻
@@ -83,7 +83,7 @@ function makeChannelCaption(title, url, userId, performer = 'Unknown', source = 
 
 💿 <b>Title:</b> ${title}
 🎤 <b>Artist:</b> ${performer}
-🌐 <b>Source:</b> ${platformEmoji}
+🌐 <b>Source:</b> ${source}
 👤 <b>User ID:</b> <code>${userId}</code>
 🔗 ${url}
 
@@ -550,7 +550,7 @@ bot.on([message('text'), message('voice'), message('audio'), message('video')], 
     if (isUrl(query)) {
         const fsub = await checkForceSubscribe(ctx, uid);
         if (!fsub.joined) return ctx.reply(getText(uid, 'join_alert'), Markup.inlineKeyboard(fsub.buttons));
-        const waitMsg = await ctx.reply('🔗 Processing Link...');
+        const waitMsg = await ctx.reply('🔎 💿');
         try {
             const p = spawn('yt-dlp', ['--dump-json', '--no-warnings', query]);
             let output = '';
@@ -561,17 +561,15 @@ bot.on([message('text'), message('voice'), message('audio'), message('video')], 
                     const info = JSON.parse(output);
                     const title = info.title || 'Unknown Video';
                     const thumb = info.thumbnail || CONFIG.defaultThumb;
-                    const mp4Link = `https://t.me/${CONFIG.mp4BotUsername}?start=${Buffer.from(query).toString('base64')}`;
                     userLinkStash[uid] = query; 
                     await ctx.replyWithPhoto({ url: thumb }, { 
                         caption: `🔗 <b>Link Detected</b>\n\n📄 <b>Title:</b> ${title}\n🔗 <code>${query}</code>`,
                         parse_mode: 'HTML',
-                        reply_markup: { inline_keyboard: [[{ text: '🎵 MP3', callback_data: 'link_mp3' }, { text: '🎥 MP4', url: mp4Link }]]}
+                        reply_markup: { inline_keyboard: [[{ text: '🎵 MP3', callback_data: 'link_mp3' }, { text: '🎥 MP4', callback_data: 'link_mp4' }]]}
                     });
                 } catch (e) {
-                    const mp4Link = `https://t.me/${CONFIG.mp4BotUsername}?start=${Buffer.from(query).toString('base64')}`;
                     userLinkStash[uid] = query;
-                    await ctx.replyWithHTML(`🔗 <b>Link Detected</b>\n<code>${query}</code>`, Markup.inlineKeyboard([[{ text: '🎵 MP3', callback_data: 'link_mp3' }, { text: '🎥 MP4', url: mp4Link }]]));
+                    await ctx.replyWithHTML(`🔗 <b>Link Detected</b>\n<code>${query}</code>`, Markup.inlineKeyboard([[{ text: '🎵 MP3', callback_data: 'link_mp3' }, { text: '🎥 MP4', callback_data: 'link_mp4' }]]));
                 }
             });
         } catch(e) { try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){} ctx.reply('❌ Invalid Link.'); }
@@ -588,11 +586,19 @@ bot.action('link_mp3', async (ctx) => {
     await handleDirectDownload(ctx, link, 'Audio', false, true); 
 });
 
+bot.action('link_mp4', async (ctx) => {
+    const uid = ctx.from.id;
+    const link = userLinkStash[uid]; 
+    if(!link) return ctx.answerCbQuery('Expired.');
+    await ctx.deleteMessage();
+    await handleDirectDownload(ctx, link, 'Video', false, true); 
+});
+
 // ====================== 9. SEARCH LOGIC ======================
 async function handleSearch(ctx, query) {
     const uid = ctx.from.id;
     if (ctx.callbackQuery) ctx.answerCbQuery(getText(uid, 'search')).catch(()=>{});
-    const waitMsg = await ctx.reply('🔎');
+    const waitMsg = await ctx.reply('🔎 💿');
     try {
         const mode = getUserMode(uid);
         const searchQuery = mode === 'tiktok' ? `${query} tiktok` : query;
@@ -650,7 +656,7 @@ bot.action(/chk_(\d+)/, async (ctx) => {
     const thumb = (video.thumbnails && video.thumbnails[0]) ? video.thumbnails[0].url : CONFIG.defaultThumb;
     const mode = getUserMode(uid);
     const buttons = [
-        [{ text: '🎵 MP3', callback_data: `mp3_${idx}` }, { text: '🎥 MP4', url: `https://t.me/${CONFIG.otherBotUsername.replace('@', '')}?start=help` }],
+        [{ text: '🎵 MP3', callback_data: `mp3_${idx}` }, { text: '🎥 MP4', callback_data: `mp4_${idx}` }],
         [{ text: '📺 Watch', url: video.url }]
     ];
     if(mode === 'tiktok') { buttons.push([{ text: '🎵 Full Song', callback_data: `full_${idx}` }]); }
@@ -663,7 +669,15 @@ bot.action(/mp3_(\d+)/, async (ctx) => {
     const uid = ctx.from.id;
     await ctx.deleteMessage(); 
     const video = userSearchResults[uid][idx];
-    await handleDirectDownload(ctx, video.id, video.title);
+    await handleDirectDownload(ctx, video.id, video.title, false, false, 'Audio');
+});
+
+bot.action(/mp4_(\d+)/, async (ctx) => {
+    const idx = parseInt(ctx.match[1]);
+    const uid = ctx.from.id;
+    await ctx.deleteMessage(); 
+    const video = userSearchResults[uid][idx];
+    await handleDirectDownload(ctx, video.id, video.title, false, false, 'Video');
 });
 
 bot.action(/full_(.+)/, async (ctx) => {
@@ -671,12 +685,12 @@ bot.action(/full_(.+)/, async (ctx) => {
     const uid = ctx.from.id;
     await ctx.deleteMessage();
     const video = userSearchResults[uid][idx];
-    await ctx.reply(`🔎 Searching full version...`);
+    await ctx.reply('🔎 💿');
     await handleSearch(ctx, video.title.replace('shorts', '').replace('tiktok', ''));
 });
 
 // ====================== 10. DOWNLOAD ENGINE ======================
-async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = false, isLink = false) {
+async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = false, isLink = false, type = 'Audio') {
     const uid = ctx.from.id;
     const cid = ctx.chat.id;
     if(isDeepLink) {
@@ -686,57 +700,79 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
              return ctx.reply(getText(uid, 'join_alert'), Markup.inlineKeyboard(fsub.buttons));
         } else { try { await ctx.deleteMessage(); } catch(e){} }
     }
-    if (isDeepLink && songDatabase[vidId]) {
+    
+    const dbKey = isLink ? Buffer.from(vidId).toString('base64').substring(0, 20) : vidId;
+    const cachedFile = songDatabase[`${type}_${dbKey}`];
+
+    if (isDeepLink && cachedFile) {
         const caption = makeUserCaption(appSettings.customMsg || '');
-        return await ctx.replyWithAudio(songDatabase[vidId], { caption: caption, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '🤖 Join Bot', url: `https://t.me/${CONFIG.botUsername.replace('@', '')}` }], [{ text: '↪️ Forward to Chat', switch_inline_query: '' }]] } });
+        const opts = { caption: caption, parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '🤖 Join Bot', url: `https://t.me/${CONFIG.botUsername.replace('@', '')}` }], [{ text: '↪️ Forward to Chat', switch_inline_query: '' }]] } };
+        if(type === 'Audio') await ctx.replyWithAudio(cachedFile, opts);
+        else await ctx.replyWithVideo(cachedFile, opts);
+        return;
     }
+
     let waitMsg;
     try { waitMsg = await ctx.reply('⏳'); } catch(e) { return; }
-    if (ctx.callbackQuery) ctx.answerCbQuery('Downloading...').catch(()=>{});
+    if (ctx.callbackQuery) ctx.answerCbQuery(getText(uid, 'dl')).catch(()=>{});
     const anim = animateMessage(ctx, cid, waitMsg.message_id);
     const url = isLink ? vidId : `https://www.youtube.com/watch?v=${vidId}`;
-    const dbKey = isLink ? Buffer.from(url).toString('base64').substring(0, 20) : vidId;
+
     try {
         let realTitle = title;
         if(realTitle === 'Audio' || !realTitle) {
              try {
-                 if(url.includes('youtube')) { const info = await play.video_info(url); realTitle = info.video_details.title; }
-                 else { const p = spawn('yt-dlp', ['--get-title', url]); p.stdout.on('data', (d) => realTitle = d.toString().trim()); }
+                 const p = spawn('yt-dlp', ['--get-title', '--no-check-certificate', url]);
+                 p.stdout.on('data', (d) => realTitle = d.toString().trim());
              } catch(e) {}
         }
-        if (songDatabase[dbKey]) { await sendAudioToUser(ctx, songDatabase[dbKey], false, realTitle); }
-        else {
-            const file = path.join(__dirname, `${Date.now()}.m4a`);
+
+        if (cachedFile) {
+            await sendMediaToUser(ctx, cachedFile, false, realTitle, type);
+        } else {
+            const ext = type === 'Audio' ? 'm4a' : 'mp4';
+            const format = type === 'Audio' ? 'bestaudio[ext=m4a]' : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]';
+            const file = path.join(__dirname, `${Date.now()}.${ext}`);
+            
             await new Promise((resolve, reject) => {
-                const p = spawn('yt-dlp', ['-f', 'bestaudio[ext=m4a]', '-o', file, url]);
+                const p = spawn('yt-dlp', ['-f', format, '--no-check-certificate', '-o', file, url]);
                 p.on('close', c => c === 0 ? resolve() : reject());
             });
-            const sent = await sendAudioToUser(ctx, { source: file }, true, realTitle); 
-            const fileId = sent.audio.file_id;
-            songDatabase[dbKey] = fileId;
+
+            const sent = await sendMediaToUser(ctx, { source: file }, true, realTitle, type); 
+            const fileId = type === 'Audio' ? sent.audio.file_id : sent.video.file_id;
+            
+            songDatabase[`${type}_${dbKey}`] = fileId;
             saveJSON(FILES.db, songDatabase);
-            if(!Array.isArray(usersData.history[uid])) usersData.history[uid] = [];
-            usersData.history[uid].push({ title: realTitle, id: dbKey });
+            
+            if(type === 'Audio') {
+                if(!Array.isArray(usersData.history[uid])) usersData.history[uid] = [];
+                usersData.history[uid].push({ title: realTitle, id: dbKey });
+            }
             if(usersData.info[uid]) usersData.info[uid].downloads++;
             saveJSON(FILES.users, usersData);
+
             try {
-                await bot.telegram.sendAudio(CONFIG.backupChannel, { source: file }, { caption: makeChannelCaption(realTitle, url, uid), parse_mode: 'HTML', title: realTitle, performer: 'Music Bot' });
-            } catch (e) { console.log('Backup Error'); }
+                const backupOpts = { caption: makeChannelCaption(realTitle, url, uid), parse_mode: 'HTML', title: realTitle, performer: 'Music Bot' };
+                if(type === 'Audio') await bot.telegram.sendAudio(CONFIG.backupChannel, { source: file }, backupOpts);
+                else await bot.telegram.sendVideo(CONFIG.backupChannel, { source: file }, backupOpts);
+            } catch (e) {}
+
             fs.unlinkSync(file);
         }
         clearInterval(anim);
         try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){}
-        if (appSettings.customMsg) { await ctx.reply(appSettings.customMsg); }
-        if (ctx.chat.type === 'private') { await ctx.reply('↪️ Share this song:', Markup.inlineKeyboard([[Markup.button.switchInlineQuery('Forward', '')]])); }
-        else { await ctx.reply(`🤖 <a href="${CONFIG.ownerLink}">Join our Bot</a>`, { parse_mode: 'HTML', disable_web_page_preview: true }); }
-    } catch (e) { clearInterval(anim); try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){} }
+        if (appSettings.customMsg) await ctx.reply(appSettings.customMsg);
+        await ctx.reply('↪️ Share this:', Markup.inlineKeyboard([[Markup.button.switchInlineQuery('Forward', '')]]));
+    } catch (e) { clearInterval(anim); try { await ctx.deleteMessage(waitMsg.message_id); } catch(e){} ctx.reply(getText(uid, 'not_found')); }
 }
 
-async function sendAudioToUser(ctx, source, isNew = false, realTitle = '') {
+async function sendMediaToUser(ctx, source, isNew = false, realTitle = '', type = 'Audio') {
     const caption = makeUserCaption();
     const options = { caption: caption, parse_mode: 'HTML' };
     if (isNew) { options.title = realTitle; options.performer = CONFIG.botUsername; }
-    return await ctx.replyWithAudio(source, options);
+    if(type === 'Audio') return await ctx.replyWithAudio(source, options);
+    else return await ctx.replyWithVideo(source, options);
 }
 
 // ====================== 11. TOP MUSIC LOGIC ======================
@@ -796,42 +832,31 @@ bot.on('inline_query', async (ctx) => {
     try {
         const results = await play.search(query, { limit: 10, source: { youtube: 'video' } });
         const inlineResults = results.map(v => {
-            if (songDatabase[v.id]) { return { type: 'audio', id: v.id, audio_file_id: songDatabase[v.id], caption: makeUserCaption(), parse_mode: 'HTML', title: v.title }; }
+            const cachedId = songDatabase[`Audio_${v.id}`];
+            if (cachedId) { return { type: 'audio', id: v.id, audio_file_id: cachedId, caption: makeUserCaption(), parse_mode: 'HTML', title: v.title }; }
             else { return { type: 'article', id: v.id, title: v.title, description: `Tap to Download via Bot`, thumb_url: v.thumbnails[0]?.url, input_message_content: { message_text: `💿 <b>${v.title}</b>`, parse_mode: 'HTML' }, reply_markup: { inline_keyboard: [[{ text: '⬇️ Download via Bot', url: `https://t.me/${CONFIG.botUsername.replace('@', '')}?start=dl_${v.id}` }]] } }; }
         });
         await ctx.answerInlineQuery(inlineResults, { cache_time: 0 });
     } catch (e) {}
 });
 
-// Render-এর জন্য HTTP Server (বটকে অনলাইনে রাখতে)
 const http = require('http');
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot is Running\n');
 }).listen(process.env.PORT || 10000);
 
-// এরর হ্যান্ডেলিং
-bot.catch((err) => {
-    console.log('Error:', err);
-});
+bot.catch((err) => console.log('Error:', err));
 
-// বট লঞ্চ করার সঠিক নিয়ম (রিট্রাই লজিক সহ)
 const startBot = () => {
     bot.launch().then(() => {
         console.log('🚀 Bot has been successfully launched!');
     }).catch((err) => {
         console.error('❌ Launch error:', err.message);
-        if (err.message.includes('409')) {
-            console.log('⚠️ Conflict detected: Make sure Termux or other instances are closed.');
-        }
-        // ১০ সেকেন্ড পর আবার চেষ্টা করবে যদি নেটওয়ার্ক এরর হয়
         setTimeout(() => startBot(), 10000);
     });
 };
-
 startBot();
 
-// সেফলি বন্ধ করার জন্য
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
