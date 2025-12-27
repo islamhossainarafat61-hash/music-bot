@@ -13,7 +13,7 @@ const path = require('path');
 
 // ====================== 1. CONFIGURATION ======================
 const CONFIG = {
-    botToken: '8372713470:AAExV6pfD5Xm9J-uUzKiuQs-1QfH-u4qx_g',
+    botToken: '8372713470:AAE9-JWCpAND7NWe-yohWiPzChrfl5BIxgo',
     adminIds: [7249009912],
     backupChannel: '-1003311021802',
     mp4BotUsername: 'Ayat_Earningx_Bot',
@@ -22,7 +22,7 @@ const CONFIG = {
     triggerTag: '@AMusic',
     ownerLink: 'https://t.me/Araf_Tech_Official',
     muzycapLink: 'https://t.me/A_Tech_Music_Bot',
-    startVideo: 'BAACAgUAAxkBAAIBGGkzNsP1gmrGu7hoKS0n9a9pce4DAAJ9HAACCW2ZVTCZ6_OfpZseNgQ',
+    startVideo: 'BAACAgUAAxkBAAIHnWlOD4SLI9Ht3J7BWEpSI-LkTsZfAAJlGAACU5T5VettdL0FusDwNgQ',
     defaultThumb: 'https://i.imgur.com/8J6qXkH.png'
 };
 
@@ -552,7 +552,7 @@ bot.on([message('text'), message('voice'), message('audio'), message('video')], 
         if (!fsub.joined) return ctx.reply(getText(uid, 'join_alert'), Markup.inlineKeyboard(fsub.buttons));
         const waitMsg = await ctx.reply('🔎 💿');
         try {
-            const p = spawn('yt-dlp', ['--dump-json', '--no-warnings', query]);
+            const p = spawn('python3', ['-m', 'yt_dlp', '--dump-json', '--no-warnings', query]);
             let output = '';
             p.stdout.on('data', (d) => output += d);
             p.on('close', async (c) => {
@@ -722,7 +722,7 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
         let realTitle = title;
         if(realTitle === 'Audio' || !realTitle) {
              try {
-                 const p = spawn('yt-dlp', ['--get-title', '--no-check-certificate', url]);
+                 const p = spawn('python3', ['-m', 'yt_dlp', '--get-title', '--no-check-certificate', url]);
                  p.stdout.on('data', (d) => realTitle = d.toString().trim());
              } catch(e) {}
         }
@@ -735,7 +735,7 @@ async function handleDirectDownload(ctx, vidId, title = 'Audio', isDeepLink = fa
             const file = path.join(__dirname, `${Date.now()}.${ext}`);
             
             await new Promise((resolve, reject) => {
-                const p = spawn('yt-dlp', ['-f', format, '--no-check-certificate', '-o', file, url]);
+                const p = spawn('python3', ['-m', 'yt_dlp', '-f', format, '--no-check-certificate', '-o', file, url]);
                 p.on('close', c => c === 0 ? resolve() : reject());
             });
 
@@ -832,8 +832,7 @@ bot.on('inline_query', async (ctx) => {
     try {
         const results = await play.search(query, { limit: 10, source: { youtube: 'video' } });
         const inlineResults = results.map(v => {
-            const cachedId = songDatabase[`Audio_${v.id}`];
-            if (cachedId) { return { type: 'audio', id: v.id, audio_file_id: cachedId, caption: makeUserCaption(), parse_mode: 'HTML', title: v.title }; }
+            if (songDatabase[v.id]) { return { type: 'audio', id: v.id, audio_file_id: songDatabase[v.id], caption: makeUserCaption(), parse_mode: 'HTML', title: v.title }; }
             else { return { type: 'article', id: v.id, title: v.title, description: `Tap to Download via Bot`, thumb_url: v.thumbnails[0]?.url, input_message_content: { message_text: `💿 <b>${v.title}</b>`, parse_mode: 'HTML' }, reply_markup: { inline_keyboard: [[{ text: '⬇️ Download via Bot', url: `https://t.me/${CONFIG.botUsername.replace('@', '')}?start=dl_${v.id}` }]] } }; }
         });
         await ctx.answerInlineQuery(inlineResults, { cache_time: 0 });
