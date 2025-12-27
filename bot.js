@@ -12,7 +12,7 @@ const path = require('path');
 
 // ====================== 1. CONFIGURATION ======================
 const CONFIG = {
-    botToken: '8372713470:AAGgUXSUf8h2xtxnx4FXK31Dmhk_L_H3slA',
+    botToken: '8372713470:AAEM-Y1UBe31Qylc1z3EdNKDkHb05tjXcZA',
     adminIds: [7249009912],
     backupChannel: '-1003311021802',
     mp4BotUsername: 'Ayat_Earningx_Bot',
@@ -21,7 +21,7 @@ const CONFIG = {
     triggerTag: '@AMusic',
     ownerLink: 'https://t.me/Araf_Tech_Official',
     muzycapLink: 'https://t.me/A_Tech_Music_Bot',
-    startVideo: 'BAACAgUAAxkBAAIHnWlOD4SLI9Ht3J7BWEpSI-LkTsZfAAJlGAACU5T5VettdL0FusDwNgQ',
+    startVideo: 'BAACAgUAAxkBAAIBGGkzNsP1gmrGu7hoKS0n9a9pce4DAAJ9HAACCW2ZVTCZ6_OfpZseNgQ',
     defaultThumb: 'https://i.imgur.com/8J6qXkH.png'
 };
 
@@ -803,15 +803,35 @@ bot.on('inline_query', async (ctx) => {
     } catch (e) {}
 });
 
+// Render-এর জন্য HTTP Server (বটকে অনলাইনে রাখতে)
 const http = require('http');
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot is Running\n');
 }).listen(process.env.PORT || 10000);
 
+// এরর হ্যান্ডেলিং
+bot.catch((err) => {
+    console.log('Error:', err);
+});
 
-bot.catch((err) => console.log('Error:', err));
-bot.launch();
+// বট লঞ্চ করার সঠিক নিয়ম (রিট্রাই লজিক সহ)
+const startBot = () => {
+    bot.launch().then(() => {
+        console.log('🚀 Bot has been successfully launched!');
+    }).catch((err) => {
+        console.error('❌ Launch error:', err.message);
+        if (err.message.includes('409')) {
+            console.log('⚠️ Conflict detected: Make sure Termux or other instances are closed.');
+        }
+        // ১০ সেকেন্ড পর আবার চেষ্টা করবে যদি নেটওয়ার্ক এরর হয়
+        setTimeout(() => startBot(), 10000);
+    });
+};
+
+startBot();
+
+// সেফলি বন্ধ করার জন্য
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
